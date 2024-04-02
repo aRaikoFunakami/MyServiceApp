@@ -15,48 +15,54 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import com.example.myserviceapp.ui.theme.MyServiceAppTheme
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import android.Manifest
 
 
 class MainActivity : ComponentActivity() {
     private lateinit var intentService: Intent
 
-    // ActivityResultLauncherを初期化
-    private val overlayPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (Settings.canDrawOverlays(this)) {
-                startService(intentService)
+    // 音声録音パーミッションのリクエストに使用するActivityResultLauncherを定義
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
+            if (isGranted) {
+                checkAndStartService()
             } else {
-                Toast.makeText(application, "Please get overlay permission if you want to start the service", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Recording permission is necessary to start the service", Toast.LENGTH_LONG).show()
             }
         }
+
+    // オーバーレイパーミッションの確認とサービスの起動を行う
+    private fun checkAndStartService() {
+        if (Settings.canDrawOverlays(this)) {
+            startService(intentService)
+        } else {
+            Toast.makeText(this, "Overlay permission is necessary to start the service", Toast.LENGTH_LONG).show()
+            // オーバーレイパーミッション許可画面を開く
+            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+            startActivity(intent)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         intentService = Intent(application, MyService::class.java)
+
         setContent {
             MyServiceAppTheme {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Button(onClick = {
-                        if (Settings.canDrawOverlays(application)) {
-                            // AndroidManifest.xml
-                            // <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-                            startService(intentService)
+                        // RECORD_AUDIO パーミッションの確認
+                        if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            checkAndStartService()
                         } else {
-                            launchOverlayPermissionScreen()
+                            // パーミッションがない場合、リクエスト
+                            requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         }
                     }) {
                         Text("Start Service")
-                    }
-
-                    Button(onClick = {
-                        // オーバーレイの表示・非表示を切り替え
-                        // startServiceを呼び出すのでサービスが起動されていない場合はサービスを自動的に起動する
-                        startService(intentService.apply {
-                            action = "ACTION_TOGGLE_OVERLAY" // オーバーレイの表示状態を切り替えるアクション
-                        })
-                    }, modifier = Modifier.padding(top = 8.dp)) {
-                        Text("Toggle Overlay Visibility")
                     }
 
                     Button(onClick = {
@@ -68,17 +74,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    // オーバーレイ許可画面を開く関数
-    private fun launchOverlayPermissionScreen() {
-        // AndroidManifest.xml
-        // <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
-        val intent = Intent(
-            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-            Uri.parse("package:$packageName")
-        )
-        overlayPermissionLauncher.launch(intent)
     }
 }
 
