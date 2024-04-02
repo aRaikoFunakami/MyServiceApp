@@ -54,6 +54,7 @@ class MyService : Service() {
     private var isConversationMode = false
     var isAIProcessingConversation = false // 会話処理中かどうか
     private lateinit var audioManager: AudioManager
+    private var apiBaseUrl = "http://192.168.1.100:8080/"
 
 
     override fun onBind(intent: Intent): IBinder? {
@@ -96,6 +97,7 @@ class MyService : Service() {
                 "ACTION_TOGGLE_OVERLAY" -> toggleOverlayVisibility()  // オーバーレイの表示状態を切り替え
             }
         }
+        apiBaseUrl = intent?.getStringExtra("ip_address") ?: apiBaseUrl
         return START_STICKY
     }
 
@@ -281,8 +283,9 @@ class MyService : Service() {
         // 会話処理の開始
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                Log.d(TAG, "Connect to: $apiBaseUrl")
                 val retrofit = Retrofit.Builder()
-                    .baseUrl("http://192.168.1.100:8000/")
+                    .baseUrl(apiBaseUrl)
                     .addConverterFactory(GsonConverterFactory.create())
                     .build()
 
