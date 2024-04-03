@@ -1,42 +1,36 @@
 package com.example.myserviceapp
 
 
-import android.app.Service
-import android.app.NotificationManager
 import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.Intent
-import android.os.IBinder
+import android.app.Service
 import android.content.Context
-import androidx.core.app.NotificationCompat
-import android.util.Log
-import android.os.Handler
-import android.os.Looper
-import android.media.RingtoneManager
-import android.media.AudioManager
-import android.net.Uri
-
+import android.content.Intent
 import android.graphics.PixelFormat
+import android.media.AudioManager
+import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.ImageView
-
-import android.os.Bundle
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
-import android.speech.RecognitionListener
-
-
+import androidx.core.app.NotificationCompat
+import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import retrofit2.Call
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import retrofit2.http.Query
-import retrofit2.Call
 import kotlin.math.abs
-import com.google.gson.annotations.SerializedName
 
 data class TextResponse(
     @SerializedName("input_text") val inputText: String,
@@ -156,17 +150,6 @@ class MyService : Service() {
         }
     }
 
-    private fun playNotificationSound() {
-        try {
-            val notification: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            //val notification: Uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            val ringtone = RingtoneManager.getRingtone(applicationContext, notification)
-            ringtone.play()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
     private fun matchStartKeyWord(input: String): Boolean {
         // 正規表現用のパターン文字列をリストで管理
         // ハロー アクセス で呼び出したいが間違って認識した場合も許容する
@@ -201,22 +184,14 @@ class MyService : Service() {
                             Log.d(TAG, "Recognized text: $text")
 
                             if (!isConversationMode && matchStartKeyWord(text)) {
-                                // AIとの会話モードに入る
-                                playNotificationSound() // 通知音を再生
+                                Log.d(TAG, "enter AI conversation mode")
                                 setConversationMode(true)
-                                Log.d(TAG, "isAIProcessingConversation: $isAIProcessingConversation")
-                                Log.d(TAG, "isConversationMode mode: $isConversationMode")
-                                startAIConversationProcessing(text)
                             } else if (isConversationMode) {
-                                // AIと会話中
-                                Log.d(TAG, "isAIProcessingConversation: $isAIProcessingConversation")
-                                Log.d(TAG, "isConversationMode mode: $isConversationMode")
+                                Log.d(TAG, "proceeding AI conversation mode")
                                 startAIConversationProcessing(text)
                             } else {
                                 // AIと会話を始める前
-                                // No action
-                                Log.d(TAG, "isAIProcessingConversation: $isAIProcessingConversation")
-                                Log.d(TAG, "isConversationMode mode: $isConversationMode")
+                                Log.d(TAG, "waiting a wake word")
                             }
                         }
                     }
@@ -318,16 +293,14 @@ class MyService : Service() {
 
 abstract class RecognitionListenerAdapter(private val service: MyService) : RecognitionListener {
     private val TAG = "RecognitionListener"
-    private val silenceThreshold = 4.0f // RMS dBの閾値。この値以下を無音とみなす
+    private val silenceThreshold = 12.0f // RMS dBの閾値。この値以下を無音とみなす
     private val silenceTimeout = 5000L // 無音状態がこの時間（ミリ秒）続いたらタイムアウトとする
     private var isCurrentlySilent = false // 現在無音状態かどうか
-    private var lastSilentStartTime = 0L // 最後に無音状態が始まった時刻
-    private var lastAIProcessingState = service.isAIProcessingConversation // AI処理状態の最後の値
 
     private val silenceHandler = Handler(Looper.getMainLooper())
     private val checkSilenceRunnable: Runnable = Runnable {
         // AIとの会話が終了して silenceTimeout が経過したら会話モードを終了する
-        if (!service.isAIProcessingConversation && System.currentTimeMillis() - lastSilentStartTime >= silenceTimeout) {
+        if (!service.isAIProcessingConversation) {
             service.setConversationMode(false)
             Log.d(TAG, "Exit conversation mode with AI because of timeout ($silenceTimeout)")
         }
@@ -335,24 +308,26 @@ abstract class RecognitionListenerAdapter(private val service: MyService) : Reco
     }
 
     override fun onRmsChanged(rmsdB: Float) {
-        // AI処理状態の変化を検出
-        if (lastAIProcessingState && !service.isAIProcessingConversation) {
-            // AI処理がtrueからfalseに変わったら、無音状態のタイマーをリセット
-            lastSilentStartTime = System.currentTimeMillis()
+        if (service.isAIProcessingConversation){
+            if (isCurrentlySilent) {
+                silenceHandler.removeCallbacks(checkSilenceRunnable)
+                isCurrentlySilent = false
+            }
+            return
         }
-        lastAIProcessingState = service.isAIProcessingConversation
 
         if (abs(rmsdB) < silenceThreshold) {
             if (!isCurrentlySilent) {
                 // 無音状態の開始を検出
+                Log.d(TAG, "Detects the onset of a silence condition. (rmsdB:$rmsdB)")
                 isCurrentlySilent = true
-                lastSilentStartTime = System.currentTimeMillis() // 無音状態の開始時刻を更新
                 silenceHandler.postDelayed(checkSilenceRunnable, silenceTimeout)
             }
             // 以降は無音状態が続く限り、何もしない（タイマーの再スケジュールは行わない）
         } else {
             if (isCurrentlySilent) {
                 // 音声が検出され、無音状態が終了した
+                Log.d(TAG, "Audio detected and silence ended. (rmsdB:$rmsdB)")
                 silenceHandler.removeCallbacks(checkSilenceRunnable)
                 isCurrentlySilent = false
             }
