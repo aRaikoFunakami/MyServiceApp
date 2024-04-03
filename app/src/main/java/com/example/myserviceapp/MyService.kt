@@ -36,12 +36,16 @@ import retrofit2.http.GET
 import retrofit2.http.Query
 import retrofit2.Call
 import kotlin.math.abs
+import com.google.gson.annotations.SerializedName
 
+data class TextResponse(
+    @SerializedName("input_text") val inputText: String,
+    @SerializedName("response_text") val responseText: String
+)
 interface ApiService {
     @GET("input")
-    fun getTextResponse(@Query("text") text: String): Call<String>
+    fun getTextResponse(@Query("text") text: String): Call<TextResponse>
 }
-
 
 // 通知チャネルのID
 private const val CHANNEL_ID = "my_channel_id"
@@ -218,24 +222,7 @@ class MyService : Service() {
                     }
                     startListening()
                 }
-                /*
-                override fun onPartialResults(partialResults: Bundle?) {
-                    partialResults?.let { results ->
-                        Log.d(TAG, "onPartialResults: 途中結果が得られました。")
-                        val matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        matches?.let {
-                            if (it.isNotEmpty()) {
-                                val text = it[0]
-                                Log.d(TAG, "Recognized text: $text")
-                                if (matchStartKeyWord(text)) {
-                                    isConversationMode = true
-                                    Log.d(TAG, "isConversationMode mode: $isConversationMode")
-                                }
-                            }
-                        }
-                    }
-                }
-                */
+
                 override fun onError(error: Int) {
                     Log.d(TAG, "onError: 音声認識エラーが発生しました。エラーコード: $error")
                     if (error == SpeechRecognizer.ERROR_NO_MATCH) {
@@ -280,6 +267,7 @@ class MyService : Service() {
     }
     fun startAIConversationProcessing(requestText: String) {
         isAIProcessingConversation = true
+        Log.d(TAG, "Start AI Conversation")
         // 会話処理の開始
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -301,6 +289,7 @@ class MyService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "Error during network call", e)
             } finally {
+                Log.d(TAG, "Finish AI Conversation")
                 finishAIConversationProcessing()
             }
         }
@@ -332,26 +321,32 @@ abstract class RecognitionListenerAdapter(private val service: MyService) : Reco
     private val silenceThreshold = 4.0f // RMS dBの閾値。この値以下を無音とみなす
     private val silenceTimeout = 5000L // 無音状態がこの時間（ミリ秒）続いたらタイムアウトとする
     private var isCurrentlySilent = false // 現在無音状態かどうか
+    private var lastSilentStartTime = 0L // 最後に無音状態が始まった時刻
+    private var lastAIProcessingState = service.isAIProcessingConversation // AI処理状態の最後の値
 
     private val silenceHandler = Handler(Looper.getMainLooper())
     private val checkSilenceRunnable: Runnable = Runnable {
-        // 一定時間無音状態が続いたときの処理
-        Log.d("SpeechRecognizer", "無音状態が${silenceTimeout}ミリ秒以上続きました。")
-
-        // 会話のためにAIが処理を進めている場合には無音時間が続いても無視する
-        // AI処理が終了してから無音状態が一定時間続いた場合のみ会話モードを終了
-        if (!service.isAIProcessingConversation) {
+        // AIとの会話が終了して silenceTimeout が経過したら会話モードを終了する
+        if (!service.isAIProcessingConversation && System.currentTimeMillis() - lastSilentStartTime >= silenceTimeout) {
             service.setConversationMode(false)
+            Log.d(TAG, "Exit conversation mode with AI because of timeout ($silenceTimeout)")
         }
         isCurrentlySilent = false // 無音状態をリセット
     }
 
     override fun onRmsChanged(rmsdB: Float) {
-        //Log.d(TAG, "onRmsChanged: 受信音声のRMS変化が検出されました。RMS dB: $rmsdB")
+        // AI処理状態の変化を検出
+        if (lastAIProcessingState && !service.isAIProcessingConversation) {
+            // AI処理がtrueからfalseに変わったら、無音状態のタイマーをリセット
+            lastSilentStartTime = System.currentTimeMillis()
+        }
+        lastAIProcessingState = service.isAIProcessingConversation
+
         if (abs(rmsdB) < silenceThreshold) {
             if (!isCurrentlySilent) {
                 // 無音状態の開始を検出
                 isCurrentlySilent = true
+                lastSilentStartTime = System.currentTimeMillis() // 無音状態の開始時刻を更新
                 silenceHandler.postDelayed(checkSilenceRunnable, silenceTimeout)
             }
             // 以降は無音状態が続く限り、何もしない（タイマーの再スケジュールは行わない）
