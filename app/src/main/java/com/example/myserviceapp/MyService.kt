@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -31,11 +32,26 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import retrofit2.http.Query
 import kotlin.math.abs
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import java.util.Locale
 
 data class TextResponse(
-    @SerializedName("input_text") val inputText: String,
-    @SerializedName("response_text") val responseText: String
+    @SerializedName("received_text") val receivedText: String,
+    @SerializedName("response_text") val responseText: String,
+    @SerializedName("intent") val action: IntentAction
 )
+
+data class IntentAction(
+    @SerializedName("navigation") val navigation: CarNavigation
+)
+
+data class CarNavigation(
+    @SerializedName("navi_application") val naviName: String,
+    @SerializedName("latitude") val latitude: Double,
+    @SerializedName("longitude") val longitude: Double
+)
+
 interface ApiService {
     @GET("input")
     fun getTextResponse(@Query("text") text: String): Call<TextResponse>
@@ -44,11 +60,12 @@ interface ApiService {
 // 通知チャネルのID
 private const val CHANNEL_ID = "my_channel_id"
 
-class MyService : Service() {
+class MyService : Service(), TextToSpeech.OnInitListener {
     private val TAG = MyService::class.java.simpleName
     private var isRunning = false
     private var overlayView: ImageView? = null // オーバーレイとして表示するImageView
     private var speechRecognizer: SpeechRecognizer? = null
+    private var textToSpeech: TextToSpeech? = null
     private var isConversationMode = false
     var isAIProcessingConversation = false // 会話処理中かどうか
     private lateinit var audioManager: AudioManager
@@ -77,15 +94,26 @@ class MyService : Service() {
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
         initializeSpeechRecognizer()
+        initializeTextToSpeech()
     }
 
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            Log.d(TAG, "TextToSpeech.SUCCESS")
+            // TextToSpeechの初期化が成功した場合、言語を設定
+            textToSpeech?.language = Locale.JAPANESE
+            val textToSpeak = "サービスを開始します"
+            speak(textToSpeak)
+        } else {
+            Log.d(TAG, "ERROR: TextToSpeech.SUCCESS")
+        }
+    }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!isRunning) {
             isRunning = true
             Log.d(TAG, "Service is starting...")
             // サービスの初期化や前景処理の開始
             startForegroundService()
-            // showOverlayImage() // オーバーレイ表示のセットアップを呼び出し
         } else {
             Log.d(TAG, "Service is already running.")
             // 既にサービスが起動している場合の追加の処理
@@ -170,6 +198,49 @@ class MyService : Service() {
         // いずれかのパターンにマッチした場合はtrue、そうでない場合はfalseを返す
         return combinedPattern.containsMatchIn(input)
     }
+
+    private fun runOnMainThread(action: () -> Unit) {
+        Handler(Looper.getMainLooper()).post(action)
+    }
+    private fun initializeTextToSpeech() {
+        // TextToSpeechの初期化
+        textToSpeech = TextToSpeech(this, this).apply {
+            setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {
+                    // TTSの読み上げが開始されたときの処理
+                    Log.d(TAG, "TTS onStart")
+                    runOnMainThread{stopListening()}// 音声認識を一時停止
+                }
+
+                override fun onDone(utteranceId: String?) {
+                    // TTSの読み上げが終了したときの処理
+                    Log.d(TAG, "TTS onDone")
+                    finishAIConversationProcessing()
+                    runOnMainThread{startListening()} // 音声認識を再開
+                }
+
+                override fun onError(utteranceId: String?) {
+                    // エラーが発生したときの処理
+                    Log.d(TAG, "TTS onError")
+                }
+            })
+        }
+    }
+
+    private fun speak(text: String) {
+        Log.d(TAG, "speak: $textToSpeech, $text")
+        val utteranceId = hashCode().toString() + System.currentTimeMillis()
+        val params = Bundle().apply {
+            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+        }
+        textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+    }
+    private fun stopSpeaking() {
+        if (textToSpeech?.isSpeaking == true) {
+            textToSpeech?.stop()
+        }
+    }
+
     private fun initializeSpeechRecognizer() {
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
             setRecognitionListener(object : RecognitionListenerAdapter(this@MyService) {
@@ -186,16 +257,25 @@ class MyService : Service() {
                             if (!isConversationMode && matchStartKeyWord(text)) {
                                 Log.d(TAG, "enter AI conversation mode")
                                 setConversationMode(true)
+                                // エコーキャンセル対応したら削除
+                                startListening()
                             } else if (isConversationMode) {
                                 Log.d(TAG, "proceeding AI conversation mode")
+
                                 startAIConversationProcessing(text)
                             } else {
                                 // AIと会話を始める前
                                 Log.d(TAG, "waiting a wake word")
+                                // エコーキャンセル対応したら削除
+                                startListening()
                             }
                         }
                     }
-                    startListening()
+                    // エコーキャンセル対応するまでは一問一答方式にする
+                    // AIからの回答を入力として受け取らないようにする
+                    // 別対応としてTTS実行中は入力内容を無視する方法があるそのほうが良いかも
+                    // エコーキャンセル対応したら下記を有効にする
+                    // startListening()
                 }
 
                 override fun onError(error: Int) {
@@ -230,13 +310,21 @@ class MyService : Service() {
         }
         speechRecognizer?.startListening(intent)
     }
-
+    private fun stopListening() {
+        speechRecognizer?.stopListening()
+    }
     fun setConversationMode(active: Boolean) {
+        if(isConversationMode == active){
+            Log.d(TAG, "Conversation mode is same as: $isConversationMode")
+            return
+        }
         isConversationMode = active
         Log.d(TAG, "Conversation mode set to: $isConversationMode")
         if (isConversationMode) {
+            speak("こんにちは！何をお手伝いしましょうか？")
             showOverlayImage()
         } else {
+            speak("今日はありがとうございました！ご利用をお待ちしております。")
             hideOverlayImage()
         }
     }
@@ -258,6 +346,33 @@ class MyService : Service() {
                 if (response.isSuccessful) {
                     val responseData = response.body()
                     Log.d(TAG, "Received data: $responseData")
+
+                    // Speech
+                    if (!responseData?.responseText.isNullOrEmpty()) {
+                        // テキストが空でない場合、読み上げを行う
+                        speak(responseData?.responseText ?: "")
+                    }
+
+                    // Intent CarNavigation
+                    responseData?.action?.navigation?.let {
+                        // CarNavigationが存在する場合、インテントを作成してナビゲーションを開始
+                        val latitude = it.latitude
+                        val longitude = it.longitude
+                        val intent = Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("google.navigation:q=${latitude},${longitude}")
+                        ).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            setPackage("com.google.android.apps.maps")
+                        }
+
+                        if (intent.resolveActivity(packageManager) != null) {
+                            startActivity(intent)
+                        } else {
+                            // Google Mapsがインストールされていない場合の処理
+                            // 例えば、Google Playストアへのリンクを表示するなど
+                        }
+                    }
                 } else {
                     Log.d(TAG, "Failed to receive data")
                 }
@@ -265,7 +380,8 @@ class MyService : Service() {
                 Log.e(TAG, "Error during network call", e)
             } finally {
                 Log.d(TAG, "Finish AI Conversation")
-                finishAIConversationProcessing()
+                // 音声再生する場合は音声再生終了時に呼び出す
+                //finishAIConversationProcessing()
             }
         }
     }
@@ -281,11 +397,15 @@ class MyService : Service() {
         Log.d(TAG, "Service onDestroy")
         stopForeground(STOP_FOREGROUND_REMOVE)
 
-        speechRecognizer?.stopListening() // SpeechRecognizerのリスニングを停止
-        speechRecognizer?.destroy() // SpeechRecognizerのリソースを解放
+        speechRecognizer?.stopListening()
+        speechRecognizer?.destroy()
+
+        textToSpeech?.stop()
+        textToSpeech?.shutdown()
+
         overlayView?.let {
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            windowManager.removeView(it) // オーバーレイとして追加したビューを削除
+            windowManager.removeView(it)
             overlayView = null
         }
     }
@@ -294,7 +414,7 @@ class MyService : Service() {
 abstract class RecognitionListenerAdapter(private val service: MyService) : RecognitionListener {
     private val TAG = "RecognitionListener"
     private val silenceThreshold = 12.0f // RMS dBの閾値。この値以下を無音とみなす
-    private val silenceTimeout = 5000L // 無音状態がこの時間（ミリ秒）続いたらタイムアウトとする
+    private val silenceTimeout = 10000L // 無音状態がこの時間（ミリ秒）続いたらタイムアウトとする
     private var isCurrentlySilent = false // 現在無音状態かどうか
 
     private val silenceHandler = Handler(Looper.getMainLooper())
@@ -340,6 +460,11 @@ abstract class RecognitionListenerAdapter(private val service: MyService) : Reco
 
     override fun onBeginningOfSpeech() {
         Log.d(TAG, "onBeginningOfSpeech: ユーザーが話し始めました。")
+        if (isCurrentlySilent) {
+            silenceHandler.removeCallbacks(checkSilenceRunnable)
+            isCurrentlySilent = false
+        }
+        return
     }
 
 
@@ -349,6 +474,11 @@ abstract class RecognitionListenerAdapter(private val service: MyService) : Reco
 
     override fun onEndOfSpeech() {
         Log.d(TAG, "onEndOfSpeech: ユーザーの話が終了しました。")
+        if (isCurrentlySilent) {
+            silenceHandler.removeCallbacks(checkSilenceRunnable)
+            isCurrentlySilent = false
+        }
+        return
     }
 
     override fun onError(error: Int) {
