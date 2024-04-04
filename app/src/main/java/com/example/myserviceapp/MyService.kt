@@ -64,13 +64,13 @@ class MyService : Service(), TextToSpeech.OnInitListener {
     private val TAG = MyService::class.java.simpleName
     private var isRunning = false
     private var overlayView: ImageView? = null // オーバーレイとして表示するImageView
+    private var loadingOverlayView: ImageView? = null
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
     private var isConversationMode = false
     var isAIProcessingConversation = false // 会話処理中かどうか
     private lateinit var audioManager: AudioManager
     private var apiBaseUrl = "http://192.168.1.100:8080/"
-
 
     override fun onBind(intent: Intent): IBinder? {
         return null
@@ -119,8 +119,7 @@ class MyService : Service(), TextToSpeech.OnInitListener {
             // 既にサービスが起動している場合の追加の処理
             when(intent?.action) {
                 "ACTION_SHOW_OVERLAY" -> showOverlayImage()  // オーバーレイを表示
-                "ACTION_HIDE_OVERLAY" -> hideOverlayImage()  // オーバーレイを非表示
-                "ACTION_TOGGLE_OVERLAY" -> toggleOverlayVisibility()  // オーバーレイの表示状態を切り替え
+                "ACTION_HIDE_OVERLAY" -> hideOverlayImage()  // オーバーレイを非表示 // オーバーレイの表示状態を切り替え
             }
         }
         apiBaseUrl = intent?.getStringExtra("ip_address") ?: apiBaseUrl
@@ -145,7 +144,7 @@ class MyService : Service(), TextToSpeech.OnInitListener {
     private fun showOverlayImage() {
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         overlayView = ImageView(this).apply {
-            setImageResource(R.drawable.animal_chara_radio_penguin) // 画像リソースの設定
+            setImageResource(R.drawable.robot) // 画像リソースの設定
         }
 
         val layoutParams = WindowManager.LayoutParams().apply {
@@ -156,7 +155,6 @@ class MyService : Service(), TextToSpeech.OnInitListener {
             //width = WindowManager.LayoutParams.WRAP_CONTENT
             //height = WindowManager.LayoutParams.WRAP_CONTENT
             width = 512
-            height = 512
         }
 
         windowManager.addView(overlayView, layoutParams) // WindowManagerにオーバーレイとして追加
@@ -170,11 +168,30 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun toggleOverlayVisibility() {
-        if (overlayView == null) {
-            showOverlayImage() // オーバーレイを表示
-        } else {
-            hideOverlayImage() // オーバーレイを非表示
+    private fun showLoadingOverlayImage() {
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        loadingOverlayView = ImageView(this).apply {
+            setImageResource(R.drawable.loading) // 画像リソースの設定
+        }
+
+        val layoutParams = WindowManager.LayoutParams().apply {
+            type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            format = PixelFormat.TRANSLUCENT
+            gravity = Gravity.CENTER // 画面中央に配置
+            width = WindowManager.LayoutParams.WRAP_CONTENT
+            height = WindowManager.LayoutParams.WRAP_CONTENT
+            //width = 512
+        }
+
+        windowManager.addView(loadingOverlayView, layoutParams) // WindowManagerにオーバーレイとして追加
+    }
+
+    private fun hideLoadingOverlayImage() {
+        loadingOverlayView?.let {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            windowManager.removeView(it) // オーバーレイとして追加したビューを削除
+            loadingOverlayView = null // ビューの参照をクリア
         }
     }
 
@@ -328,8 +345,28 @@ class MyService : Service(), TextToSpeech.OnInitListener {
             hideOverlayImage()
         }
     }
+
+    private fun startNavigation(latitude: Double, longitude: Double) {
+        Log.e(TAG, "startNavigation $latitude, $longitude")
+        // Google MapsへのURIを作成
+        val gmmIntentUri = Uri.parse("google.navigation:q=$latitude,$longitude")
+        val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri)
+        mapIntent.setPackage("com.google.android.apps.maps")
+
+        // Google Mapsアプリがインストールされているか確認
+        if (mapIntent.resolveActivity(packageManager) != null) {
+            mapIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK // サービスからアクティビティを開始するためのフラグ
+            startActivity(mapIntent)
+            speak("カーナビを起動して目的地を設定しました")
+        } else {
+            // Google Mapsがインストールされていない場合の処理（オプショナル）
+            speak("カーナビの起動に失敗しました")
+        }
+    }
+
     fun startAIConversationProcessing(requestText: String) {
         isAIProcessingConversation = true
+        showLoadingOverlayImage()
         Log.d(TAG, "Start AI Conversation")
         // 会話処理の開始
         CoroutineScope(Dispatchers.IO).launch {
@@ -355,23 +392,7 @@ class MyService : Service(), TextToSpeech.OnInitListener {
 
                     // Intent CarNavigation
                     responseData?.action?.navigation?.let {
-                        // CarNavigationが存在する場合、インテントを作成してナビゲーションを開始
-                        val latitude = it.latitude
-                        val longitude = it.longitude
-                        val intent = Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("google.navigation:q=${latitude},${longitude}")
-                        ).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            setPackage("com.google.android.apps.maps")
-                        }
-
-                        if (intent.resolveActivity(packageManager) != null) {
-                            startActivity(intent)
-                        } else {
-                            // Google Mapsがインストールされていない場合の処理
-                            // 例えば、Google Playストアへのリンクを表示するなど
-                        }
+                        startNavigation(it.latitude, it.longitude)
                     }
                 } else {
                     Log.d(TAG, "Failed to receive data")
@@ -380,6 +401,7 @@ class MyService : Service(), TextToSpeech.OnInitListener {
                 Log.e(TAG, "Error during network call", e)
             } finally {
                 Log.d(TAG, "Finish AI Conversation")
+                hideLoadingOverlayImage()
                 // 音声再生する場合は音声再生終了時に呼び出す
                 //finishAIConversationProcessing()
             }
@@ -407,6 +429,12 @@ class MyService : Service(), TextToSpeech.OnInitListener {
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             windowManager.removeView(it)
             overlayView = null
+        }
+
+        loadingOverlayView?.let {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            windowManager.removeView(it)
+            loadingOverlayView = null
         }
     }
 }

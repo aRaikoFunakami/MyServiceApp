@@ -43,6 +43,11 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback">
         </service>
+        <service
+            android:name=".CarInfoService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback">
+        </service>
     </application>
 
 </manifest>

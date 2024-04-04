@@ -12,12 +12,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.myserviceapp.ui.theme.MyServiceAppTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,9 +24,9 @@ import android.provider.Settings
 import android.net.Uri
 import androidx.core.content.ContextCompat
 
-
 class MainActivity : ComponentActivity() {
     private lateinit var intentService: Intent
+    private lateinit var intentCarInfoService: Intent
     private var ipAddress = "http://192.168.1.100:8080" // IPアドレスのデフォルト値
 
     // 音声録音パーミッションのリクエストに使用するActivityResultLauncherを定義
@@ -59,6 +56,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         intentService = Intent(application, MyService::class.java)
+        intentCarInfoService = Intent(application, CarInfoService::class.java)
 
         setContent {
             val ipState = remember { mutableStateOf(ipAddress) }
