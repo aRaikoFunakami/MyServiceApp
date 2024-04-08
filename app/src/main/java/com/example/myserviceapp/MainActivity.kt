@@ -27,6 +27,7 @@ import androidx.core.content.ContextCompat
 class MainActivity : ComponentActivity() {
     private lateinit var intentService: Intent
     private lateinit var intentCarInfoService: Intent
+    //private var ipAddress = "http://127.0.0.1:8080" // IPアドレスのデフォルト値
     private var ipAddress = "http://192.168.1.100:8080" // IPアドレスのデフォルト値
 
     // 音声録音パーミッションのリクエストに使用するActivityResultLauncherを定義
@@ -57,6 +58,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         intentService = Intent(application, MyService::class.java)
         intentCarInfoService = Intent(application, CarInfoService::class.java)
+
+        intentCarInfoService.putExtra("action", "SHOW_OVERLAY")
+        startService(intentCarInfoService)
 
         setContent {
             val ipState = remember { mutableStateOf(ipAddress) }

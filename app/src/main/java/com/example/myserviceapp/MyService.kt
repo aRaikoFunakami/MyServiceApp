@@ -39,17 +39,27 @@ import java.util.Locale
 data class TextResponse(
     @SerializedName("received_text") val receivedText: String,
     @SerializedName("response_text") val responseText: String,
-    @SerializedName("intent") val action: IntentAction
+    @SerializedName("intent") val action: IntentAction,
 )
 
 data class IntentAction(
-    @SerializedName("navigation") val navigation: CarNavigation
+    @SerializedName("navigation") val navigation: CarNavigation,
+    @SerializedName("aircontrol") val aircontrol: AirControl,
+    @SerializedName("aircontrol_delta") val aircontrolDelta: AirControlDelta,
 )
 
 data class CarNavigation(
     @SerializedName("navi_application") val naviName: String,
     @SerializedName("latitude") val latitude: Double,
     @SerializedName("longitude") val longitude: Double
+)
+
+data class AirControl(
+    @SerializedName("temperature") val temperature: Double,
+)
+
+data class AirControlDelta(
+    @SerializedName("temperature_delta") val temperatureDelta: Double,
 )
 
 interface ApiService {
@@ -70,6 +80,7 @@ class MyService : Service(), TextToSpeech.OnInitListener {
     private var isConversationMode = false
     var isAIProcessingConversation = false // 会話処理中かどうか
     private lateinit var audioManager: AudioManager
+    private lateinit var intentCarInfoService: Intent
     private var apiBaseUrl = "http://192.168.1.100:8080/"
 
     override fun onBind(intent: Intent): IBinder? {
@@ -102,7 +113,7 @@ class MyService : Service(), TextToSpeech.OnInitListener {
             Log.d(TAG, "TextToSpeech.SUCCESS")
             // TextToSpeechの初期化が成功した場合、言語を設定
             textToSpeech?.language = Locale.JAPANESE
-            val textToSpeak = "サービスを開始します"
+            val textToSpeak = "Copilotを開始します"
             speak(textToSpeak)
         } else {
             Log.d(TAG, "ERROR: TextToSpeech.SUCCESS")
@@ -112,6 +123,8 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         if (!isRunning) {
             isRunning = true
             Log.d(TAG, "Service is starting...")
+            // ダミーのCarInfo
+            intentCarInfoService = Intent(application, CarInfoService::class.java)
             // サービスの初期化や前景処理の開始
             startForegroundService()
         } else {
@@ -263,6 +276,7 @@ class MyService : Service(), TextToSpeech.OnInitListener {
             setRecognitionListener(object : RecognitionListenerAdapter(this@MyService) {
                 override fun onResults(results: Bundle) {
                     Log.d(TAG, "onResults")
+                    super.onResults(results)
                     unmuteBeepForRecognizer()
 
                     val matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -288,6 +302,7 @@ class MyService : Service(), TextToSpeech.OnInitListener {
                             }
                         }
                     }
+
                     // エコーキャンセル対応するまでは一問一答方式にする
                     // AIからの回答を入力として受け取らないようにする
                     // 別対応としてTTS実行中は入力内容を無視する方法があるそのほうが良いかも
@@ -364,6 +379,27 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun changeTemperature(temperature: Double){
+        intentCarInfoService.putExtra("action", "SET_LEFT_TEMP")
+        intentCarInfoService.putExtra("left_temp", temperature)
+        startService(intentCarInfoService)
+        val temp = temperature.toString()
+        speak("室内温度を $temp 度に設定しました")
+
+    }
+
+    private fun changeTemperatureDelta(temperatureDelta: Double){
+        intentCarInfoService.putExtra("action", "SET_LEFT_TEMP_DELTA")
+        intentCarInfoService.putExtra("left_temp", temperatureDelta)
+        startService(intentCarInfoService)
+        val temp = temperatureDelta.toString()
+        if (temperatureDelta >= 0) {
+            speak("室内温度を $temp 度あげました")
+        }else {
+            speak("室内温度を $temp 度さげました")
+        }
+    }
+
     fun startAIConversationProcessing(requestText: String) {
         isAIProcessingConversation = true
         showLoadingOverlayImage()
@@ -393,6 +429,15 @@ class MyService : Service(), TextToSpeech.OnInitListener {
                     // Intent CarNavigation
                     responseData?.action?.navigation?.let {
                         startNavigation(it.latitude, it.longitude)
+                    }
+
+                    // Temperature Delta
+                    responseData?.action?.aircontrolDelta?.let {
+                        changeTemperatureDelta(it.temperatureDelta)
+                    }
+                    // Temperature Absolute Value
+                    responseData?.action?.aircontrol?.let {
+                        changeTemperature(it.temperature)
                     }
                 } else {
                     Log.d(TAG, "Failed to receive data")
@@ -457,6 +502,7 @@ abstract class RecognitionListenerAdapter(private val service: MyService) : Reco
 
     override fun onRmsChanged(rmsdB: Float) {
         if (service.isAIProcessingConversation){
+            Log.d(TAG, "isAIProcessingConversation: $service.isAIProcessingConversation")
             if (isCurrentlySilent) {
                 silenceHandler.removeCallbacks(checkSilenceRunnable)
                 isCurrentlySilent = false
@@ -475,7 +521,7 @@ abstract class RecognitionListenerAdapter(private val service: MyService) : Reco
         } else {
             if (isCurrentlySilent) {
                 // 音声が検出され、無音状態が終了した
-                Log.d(TAG, "Audio detected and silence ended. (rmsdB:$rmsdB)")
+                // Log.d(TAG, "Audio detected and silence ended. (rmsdB:$rmsdB)")
                 silenceHandler.removeCallbacks(checkSilenceRunnable)
                 isCurrentlySilent = false
             }
@@ -483,11 +529,11 @@ abstract class RecognitionListenerAdapter(private val service: MyService) : Reco
     }
 
     override fun onReadyForSpeech(params: Bundle?) {
-        Log.d(TAG, "onReadyForSpeech: 音声認識を開始準備が整いました。")
+        //Log.d(TAG, "onReadyForSpeech: 音声認識を開始準備が整いました。")
     }
 
     override fun onBeginningOfSpeech() {
-        Log.d(TAG, "onBeginningOfSpeech: ユーザーが話し始めました。")
+        //Log.d(TAG, "onBeginningOfSpeech: ユーザーが話し始めました。")
         if (isCurrentlySilent) {
             silenceHandler.removeCallbacks(checkSilenceRunnable)
             isCurrentlySilent = false
@@ -497,11 +543,11 @@ abstract class RecognitionListenerAdapter(private val service: MyService) : Reco
 
 
     override fun onBufferReceived(buffer: ByteArray?) {
-        Log.d(TAG, "onBufferReceived: 音声データのバッファを受け取りました。")
+        //Log.d(TAG, "onBufferReceived: 音声データのバッファを受け取りました。")
     }
 
     override fun onEndOfSpeech() {
-        Log.d(TAG, "onEndOfSpeech: ユーザーの話が終了しました。")
+        //Log.d(TAG, "onEndOfSpeech: ユーザーの話が終了しました。")
         if (isCurrentlySilent) {
             silenceHandler.removeCallbacks(checkSilenceRunnable)
             isCurrentlySilent = false
@@ -510,19 +556,22 @@ abstract class RecognitionListenerAdapter(private val service: MyService) : Reco
     }
 
     override fun onError(error: Int) {
-        Log.d(TAG, "onError: 音声認識エラーが発生しました。エラーコード: $error")
+        //Log.d(TAG, "onError: 音声認識エラーが発生しました。エラーコード: $error")
     }
 
     override fun onResults(results: Bundle) {
-        Log.d(TAG, "onResults: 最終的な認識結果が得られました。")
-        // 既存の処理を維持
+        //Log.d(TAG, "onResults: 最終的な認識結果が得られました。")
+        if (isCurrentlySilent) {
+            silenceHandler.removeCallbacks(checkSilenceRunnable)
+            isCurrentlySilent = false
+        }
     }
 
     override fun onPartialResults(partialResults: Bundle?) {
-        Log.d(TAG, "onPartialResults: 途中結果が得られました。")
+        //Log.d(TAG, "onPartialResults: 途中結果が得られました。")
     }
 
     override fun onEvent(eventType: Int, params: Bundle?) {
-        Log.d(TAG, "onEvent: イベントが発生しました。イベントタイプ: $eventType")
+        //Log.d(TAG, "onEvent: イベントが発生しました。イベントタイプ: $eventType")
     }
 }
