@@ -16,6 +16,7 @@ import android.view.View
 import androidx.core.app.NotificationCompat
 import android.util.DisplayMetrics
 import android.widget.TextView
+import android.widget.ImageView
 
 // 通知チャネルのID
 private const val CHANNEL_ID = "carinfo_channel_id"
@@ -27,6 +28,7 @@ class CarInfoService : Service() {
     private var overlayView: View? = null
     private lateinit var textViewLeftTemp: TextView
     private lateinit var textViewRightTemp: TextView
+    private lateinit var intentService: Intent
 
     override fun onBind(intent: Intent): IBinder? {
         return null
@@ -44,6 +46,8 @@ class CarInfoService : Service() {
         // 通知マネージャを取得してチャネルをシステムに登録
         val notificationManager: NotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(channel)
+
+        intentService = Intent(application, MyService::class.java)
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
@@ -57,6 +61,14 @@ class CarInfoService : Service() {
                     textViewLeftTemp = overlayView!!.findViewById(R.id.textViewLeftTemp)
                     textViewRightTemp = overlayView!!.findViewById(R.id.textViewRightTemp)
 
+                    val imageViewBackground: ImageView = overlayView!!.findViewById(R.id.imageViewBackground)
+                    imageViewBackground.setOnClickListener {
+                        // ACCESSの画像をタップすると "ハローアクセス" を認識した場合と同様に会話を開始する
+                        Log.d(TAG, "setOnClickListener")
+                        intentService.putExtra("action", "SET_CONVERSATION_MODE")
+                        startService(intentService)
+                    }
+
                     val displayMetrics = DisplayMetrics()
 
                     // APIレベルに応じたDisplayの取得方法を使用
@@ -67,7 +79,8 @@ class CarInfoService : Service() {
                         WindowManager.LayoutParams.MATCH_PARENT,
                         140,
                         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                        //WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                         PixelFormat.TRANSLUCENT
                     ).apply {
                         gravity = Gravity.BOTTOM

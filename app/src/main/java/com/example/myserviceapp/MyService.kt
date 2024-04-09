@@ -35,6 +35,7 @@ import kotlin.math.abs
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
+import android.view.MotionEvent
 
 data class TextResponse(
     @SerializedName("received_text") val receivedText: String,
@@ -130,9 +131,15 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         } else {
             Log.d(TAG, "Service is already running.")
             // 既にサービスが起動している場合の追加の処理
-            when(intent?.action) {
+            when(intent?.getStringExtra("action") ?: "") {
                 "ACTION_SHOW_OVERLAY" -> showOverlayImage()  // オーバーレイを表示
                 "ACTION_HIDE_OVERLAY" -> hideOverlayImage()  // オーバーレイを非表示 // オーバーレイの表示状態を切り替え
+                "SET_CONVERSATION_MODE" -> {
+                    Log.d(TAG, "SET_CONVERSATION_MODE")
+                    setConversationMode(true)
+                    // エコーキャンセル対応したら削除
+                    startListening()
+                }
             }
         }
         apiBaseUrl = intent?.getStringExtra("ip_address") ?: apiBaseUrl
@@ -158,11 +165,28 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         overlayView = ImageView(this).apply {
             setImageResource(R.drawable.robot) // 画像リソースの設定
+            // タッチリスナーを設定して、タップイベントを検出
+            setOnTouchListener { view, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        // performClickを呼び出して、クリックイベントを模倣
+                        view.performClick()
+                        // タップされたら強制的に音声出力をキャンセルして会話モードをキャンセル
+                        Log.d("YourTag", "Overlay image tapped!")
+                        // ここにタップ時の処理を記述
+                        stopSpeaking()
+                        setConversationMode(false)
+                        true // イベントが処理されたことを示す
+                    }
+                    else -> false // その他のタッチイベントに対してはfalseを返して、処理しない
+                }
+            }
         }
 
         val layoutParams = WindowManager.LayoutParams().apply {
             type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            // flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
             format = PixelFormat.TRANSLUCENT
             gravity = Gravity.CENTER // 画面中央に配置
             //width = WindowManager.LayoutParams.WRAP_CONTENT
