@@ -27,8 +27,8 @@ import androidx.core.content.ContextCompat
 class MainActivity : ComponentActivity() {
     private lateinit var intentService: Intent
     private lateinit var intentCarInfoService: Intent
-    //private var ipAddress = "http://127.0.0.1:8080" // IPアドレスのデフォルト値
-    private var ipAddress = "http://192.168.1.100:8080" // IPアドレスのデフォルト値
+    private var ipAddress = "http://127.0.0.1:8080" // IPアドレスのデフォルト値
+    //private var ipAddress = "http://192.168.1.100:8080" // IPアドレスのデフォルト値
 
     // 音声録音パーミッションのリクエストに使用するActivityResultLauncherを定義
     private val requestPermissionLauncher =
@@ -46,6 +46,8 @@ class MainActivity : ComponentActivity() {
         if (Settings.canDrawOverlays(this)) {
             intentService.putExtra("ip_address", ipAddress) // IPアドレスをIntentに追加
             startService(intentService)
+            intentCarInfoService.putExtra("action", "SHOW_OVERLAY")
+            startService(intentCarInfoService)
         } else {
             Toast.makeText(this, "Overlay permission is necessary to start the service", Toast.LENGTH_LONG).show()
             // オーバーレイパーミッション許可画面を開く
@@ -58,9 +60,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         intentService = Intent(application, MyService::class.java)
         intentCarInfoService = Intent(application, CarInfoService::class.java)
-
-        intentCarInfoService.putExtra("action", "SHOW_OVERLAY")
-        startService(intentCarInfoService)
 
         setContent {
             val ipState = remember { mutableStateOf(ipAddress) }
@@ -90,6 +89,7 @@ class MainActivity : ComponentActivity() {
                     Button(onClick = {
                         // サービスを停止
                         stopService(intentService)
+                        stopService(intentCarInfoService)
                     }, modifier = Modifier.padding(top = 8.dp)) {
                         Text("Stop Service")
                     }

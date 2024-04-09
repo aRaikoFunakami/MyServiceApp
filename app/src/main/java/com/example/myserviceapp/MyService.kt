@@ -257,13 +257,17 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun speak(text: String) {
+    private fun speak(text: String, isAdd: Boolean = false) {
         Log.d(TAG, "speak: $textToSpeech, $text")
         val utteranceId = hashCode().toString() + System.currentTimeMillis()
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
         }
-        textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+        if (isAdd) {
+            textToSpeech?.speak(text, TextToSpeech.QUEUE_ADD, params, utteranceId)
+        } else {
+            textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+        }
     }
     private fun stopSpeaking() {
         if (textToSpeech?.isSpeaking == true) {
@@ -353,10 +357,10 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         isConversationMode = active
         Log.d(TAG, "Conversation mode set to: $isConversationMode")
         if (isConversationMode) {
-            speak("こんにちは！何をお手伝いしましょうか？")
+            speak("何をお手伝いしましょうか？")
             showOverlayImage()
         } else {
-            speak("今日はありがとうございました！ご利用をお待ちしております。")
+            speak("またの依頼をお待ちしています。", isAdd = true)
             hideOverlayImage()
         }
     }
@@ -377,6 +381,7 @@ class MyService : Service(), TextToSpeech.OnInitListener {
             // Google Mapsがインストールされていない場合の処理（オプショナル）
             speak("カーナビの起動に失敗しました")
         }
+        setConversationMode((false))
     }
 
     private fun changeTemperature(temperature: Double){
@@ -385,7 +390,7 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         startService(intentCarInfoService)
         val temp = temperature.toString()
         speak("室内温度を $temp 度に設定しました")
-
+        setConversationMode((false))
     }
 
     private fun changeTemperatureDelta(temperatureDelta: Double){
@@ -398,6 +403,7 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         }else {
             speak("室内温度を $temp 度さげました")
         }
+        setConversationMode((false))
     }
 
     fun startAIConversationProcessing(requestText: String) {
@@ -487,7 +493,7 @@ class MyService : Service(), TextToSpeech.OnInitListener {
 abstract class RecognitionListenerAdapter(private val service: MyService) : RecognitionListener {
     private val TAG = "RecognitionListener"
     private val silenceThreshold = 12.0f // RMS dBの閾値。この値以下を無音とみなす
-    private val silenceTimeout = 10000L // 無音状態がこの時間（ミリ秒）続いたらタイムアウトとする
+    private val silenceTimeout = 5000L // 無音状態がこの時間（ミリ秒）続いたらタイムアウトとする
     private var isCurrentlySilent = false // 現在無音状態かどうか
 
     private val silenceHandler = Handler(Looper.getMainLooper())
