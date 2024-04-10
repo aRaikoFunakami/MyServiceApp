@@ -36,6 +36,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 import android.view.MotionEvent
+import android.provider.Settings
 
 data class TextResponse(
     @SerializedName("received_text") val receivedText: String,
@@ -124,8 +125,10 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         if (!isRunning) {
             isRunning = true
             Log.d(TAG, "Service is starting...")
-            // ダミーのCarInfo
-            intentCarInfoService = Intent(application, CarInfoService::class.java)
+            if (!isAAOS()) {
+                // ダミーのCarInfo
+                intentCarInfoService = Intent(application, CarInfoService::class.java)
+            }
             // サービスの初期化や前景処理の開始
             startForegroundService()
         } else {
@@ -161,7 +164,15 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         startForeground(1, notification)
     }
 
+    private fun isAAOS(): Boolean {
+        return (!Settings.canDrawOverlays(this))
+    }
     private fun showOverlayImage() {
+        if (isAAOS()) {
+            return
+        }
+
+        // Demo code on Android Tablet
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         overlayView = ImageView(this).apply {
             setImageResource(R.drawable.robot) // 画像リソースの設定
@@ -198,6 +209,11 @@ class MyService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun hideOverlayImage() {
+        if (isAAOS()) {
+            return
+        }
+
+        // Demo code on Android Tablet
         overlayView?.let {
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             windowManager.removeView(it) // オーバーレイとして追加したビューを削除
@@ -206,6 +222,11 @@ class MyService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun showLoadingOverlayImage() {
+        if (isAAOS()) {
+            return
+        }
+
+        // Demo code on Android Tablet
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         loadingOverlayView = ImageView(this).apply {
             setImageResource(R.drawable.loading) // 画像リソースの設定
@@ -225,6 +246,11 @@ class MyService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun hideLoadingOverlayImage() {
+        if (isAAOS()) {
+            return
+        }
+
+        // Demo code on Android Tablet
         loadingOverlayView?.let {
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             windowManager.removeView(it) // オーバーレイとして追加したビューを削除
@@ -409,18 +435,22 @@ class MyService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun changeTemperature(temperature: Double){
-        intentCarInfoService.putExtra("action", "SET_LEFT_TEMP")
-        intentCarInfoService.putExtra("left_temp", temperature)
-        startService(intentCarInfoService)
+        if (!isAAOS()) {
+            intentCarInfoService.putExtra("action", "SET_LEFT_TEMP")
+            intentCarInfoService.putExtra("left_temp", temperature)
+            startService(intentCarInfoService)
+        }
         val temp = temperature.toString()
         speak("室内温度を $temp 度に設定しました")
         setConversationMode((false))
     }
 
     private fun changeTemperatureDelta(temperatureDelta: Double){
-        intentCarInfoService.putExtra("action", "SET_LEFT_TEMP_DELTA")
-        intentCarInfoService.putExtra("left_temp", temperatureDelta)
-        startService(intentCarInfoService)
+        if (!isAAOS()) {
+            intentCarInfoService.putExtra("action", "SET_LEFT_TEMP_DELTA")
+            intentCarInfoService.putExtra("left_temp", temperatureDelta)
+            startService(intentCarInfoService)
+        }
         val temp = temperatureDelta.toString()
         if (temperatureDelta >= 0) {
             speak("室内温度を $temp 度あげました")
@@ -500,6 +530,10 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         textToSpeech?.stop()
         textToSpeech?.shutdown()
 
+        if (isAAOS()) {
+            return
+        }
+        // Demo code on Android Tablet
         overlayView?.let {
             val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             windowManager.removeView(it)
