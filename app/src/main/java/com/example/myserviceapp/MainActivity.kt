@@ -23,8 +23,11 @@ import android.content.pm.PackageManager
 import android.provider.Settings
 import android.net.Uri
 import androidx.core.content.ContextCompat
+import android.content.Context
+import android.util.Log
 
 class MainActivity : ComponentActivity() {
+    private var TAG = MyService::class.java.simpleName
     private lateinit var intentService: Intent
     private lateinit var intentCarInfoService: Intent
     private var ipAddress = "http://127.0.0.1:8080" // IPアドレスのデフォルト値
@@ -40,7 +43,19 @@ class MainActivity : ComponentActivity() {
                 Toast.makeText(this, "Recording permission is necessary to start the service", Toast.LENGTH_LONG).show()
             }
         }
-
+    /**
+     * オーバーレイパーミッション設定Intentがサポートされているかどうかを確認します。
+     * @param context アプリケーションのコンテキスト
+     * @return サポートされている場合はtrue、そうでない場合はfalse
+     */
+    private fun isOverlayPermissionIntentSupported(context: Context): Boolean {
+        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+        // Intentを処理できるアクティビティがあるかどうかを確認
+        val resolveInfo = context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        val result:Boolean = (resolveInfo != null)
+        Log.d(TAG, "isOverlayPermissionIntentSupported : $result")
+        return result
+    }
     // オーバーレイパーミッションの確認とサービスの起動を行う
     private fun checkAndStartService(ipAddress: String) {
         if (Settings.canDrawOverlays(this)) {
@@ -49,10 +64,18 @@ class MainActivity : ComponentActivity() {
             intentCarInfoService.putExtra("action", "SHOW_OVERLAY")
             startService(intentCarInfoService)
         } else {
-            Toast.makeText(this, "Overlay permission is necessary to start the service", Toast.LENGTH_LONG).show()
-            // オーバーレイパーミッション許可画面を開く
-            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-            startActivity(intent)
+            if (isOverlayPermissionIntentSupported(this)) {
+                // オーバーレイパーミッション許可画面を開く
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+                startActivity(intent)
+            } else {
+                // In case of Android Automotive OS (AAOS)
+                intentService.putExtra("ip_address", ipAddress) // IPアドレスをIntentに追加
+                startService(intentService)
+            }
         }
     }
 
