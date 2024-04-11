@@ -1,7 +1,13 @@
 package com.example.myserviceapp
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -12,19 +18,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.example.myserviceapp.ui.theme.MyServiceAppTheme
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.provider.Settings
-import android.net.Uri
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import android.content.Context
-import android.util.Log
+import com.example.myserviceapp.ui.theme.MyServiceAppTheme
 
 class MainActivity : ComponentActivity() {
     private var TAG = MyService::class.java.simpleName
@@ -72,7 +73,7 @@ class MainActivity : ComponentActivity() {
                 )
                 startActivity(intent)
             } else {
-                // In case of Android Automotive OS (AAOS)
+                // In case of Android Automotive OS
                 intentService.putExtra("ip_address", ipAddress) // IPアドレスをIntentに追加
                 startService(intentService)
             }

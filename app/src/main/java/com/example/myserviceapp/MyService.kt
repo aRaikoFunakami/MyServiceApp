@@ -37,6 +37,9 @@ import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 import android.view.MotionEvent
 import android.provider.Settings
+import android.car.Car
+import android.car.VehiclePropertyIds.*
+import android.car.hardware.property.CarPropertyManager
 
 data class TextResponse(
     @SerializedName("received_text") val receivedText: String,
@@ -83,6 +86,8 @@ class MyService : Service(), TextToSpeech.OnInitListener {
     var isAIProcessingConversation = false // 会話処理中かどうか
     private lateinit var audioManager: AudioManager
     private lateinit var intentCarInfoService: Intent
+    private lateinit var car: Car
+    private lateinit var carPropertyManager: CarPropertyManager
     private var apiBaseUrl = "http://192.168.1.100:8080/"
 
     override fun onBind(intent: Intent): IBinder? {
@@ -108,6 +113,13 @@ class MyService : Service(), TextToSpeech.OnInitListener {
 
         initializeSpeechRecognizer()
         initializeTextToSpeech()
+
+        // Connect to the Car service
+        if (isAAOS()) {
+            val handler = Handler(Looper.getMainLooper())
+            car = Car.createCar(this, handler)
+            carPropertyManager = car.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager
+        }
     }
 
     override fun onInit(status: Int) {
@@ -408,6 +420,12 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         Log.d(TAG, "Conversation mode set to: $isConversationMode")
         if (isConversationMode) {
             speak("何をお手伝いしましょうか？")
+            if (isAAOS()) {
+                Log.d(TAG, "INFO_FUEL_CAPACITY : ${carPropertyManager.getFloatProperty(INFO_FUEL_CAPACITY, 0)}")
+                Log.d(TAG, "FUEL_LEVEL : ${carPropertyManager.getFloatProperty(FUEL_LEVEL, 0)}")
+                Log.d(TAG, "FUEL_LEVEL_LOW : ${carPropertyManager.getBooleanProperty(FUEL_LEVEL_LOW, 0)}")
+                Log.d(TAG, "CURRENT_GEAR : ${carPropertyManager.getIntProperty(CURRENT_GEAR, 0)}")
+            }
             showOverlayImage()
         } else {
             speak("またの依頼をお待ちしています。", isAdd = true)
@@ -439,6 +457,14 @@ class MyService : Service(), TextToSpeech.OnInitListener {
             intentCarInfoService.putExtra("action", "SET_LEFT_TEMP")
             intentCarInfoService.putExtra("left_temp", temperature)
             startService(intentCarInfoService)
+        } else {
+            /*
+                システムアプリである必要がある
+                Signature|Privileged permission "android.car.permission.CONTROL_CAR_CLIMATE" to read and write property.
+            carPropertyManager.setFloatProperty(VehiclePropertyIds.HVAC_TEMPERATURE_SET, 0,
+                temperature.toFloat()
+            )
+             */
         }
         val temp = temperature.toString()
         speak("室内温度を $temp 度に設定しました")
@@ -450,6 +476,14 @@ class MyService : Service(), TextToSpeech.OnInitListener {
             intentCarInfoService.putExtra("action", "SET_LEFT_TEMP_DELTA")
             intentCarInfoService.putExtra("left_temp", temperatureDelta)
             startService(intentCarInfoService)
+        }else {
+            /*  Signature|Privileged permission "android.car.permission.CONTROL_CAR_CLIMATE" to read and write property.
+            val targetTemp:Float = carPropertyManager.getFloatProperty(VehiclePropertyIds.HVAC_TEMPERATURE_CURRENT, 0) + temperatureDelta.toFloat()
+            carPropertyManager.setFloatProperty(/* propertyId = */ VehiclePropertyIds.HVAC_TEMPERATURE_SET,
+                /* areaId = */ 0,
+                /* val = */ targetTemp
+            )
+             */
         }
         val temp = temperatureDelta.toString()
         if (temperatureDelta >= 0) {
@@ -531,19 +565,20 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         textToSpeech?.shutdown()
 
         if (isAAOS()) {
-            return
-        }
-        // Demo code on Android Tablet
-        overlayView?.let {
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            windowManager.removeView(it)
-            overlayView = null
-        }
+            car.disconnect()
+        } else {
+            // Demo code on Android Tablet
+            overlayView?.let {
+                val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                windowManager.removeView(it)
+                overlayView = null
+            }
 
-        loadingOverlayView?.let {
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            windowManager.removeView(it)
-            loadingOverlayView = null
+            loadingOverlayView?.let {
+                val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                windowManager.removeView(it)
+                loadingOverlayView = null
+            }
         }
     }
 }
