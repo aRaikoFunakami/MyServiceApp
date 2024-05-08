@@ -39,9 +39,10 @@ import android.provider.Settings
 import android.car.Car
 import android.car.VehiclePropertyIds.*
 import android.car.hardware.property.CarPropertyManager
-import org.intellij.lang.annotations.Language
+import android.icu.text.SimpleDateFormat
 import org.json.JSONException
 import org.json.JSONObject
+import java.util.Date
 
 data class TextResponse(
     @SerializedName("received_text") val receivedText: String,
@@ -583,6 +584,14 @@ class MyService : Service(), TextToSpeech.OnInitListener {
             .baseUrl(apiBaseUrl)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
+
+        // 現在の日付と時刻をcatInfoJsonに追加
+        val currentDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        val currentTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+        carInfoJson.put("today", currentDate)
+        carInfoJson.put("current_time", currentTime)
+        carInfoJson.put("fuel_level_description", "Fuel level in %, where 75 means 75%.")
+        carInfoJson.put("vehicle_speed_description", "Indicates the current speed of the vehicle. Unit is km. 60 means 60 km.")
 
         val service = retrofit.create(ApiService::class.java)
         val requestData = RequestData(requestText, carInfoJson)  // リクエストデータのインスタンスを作成
