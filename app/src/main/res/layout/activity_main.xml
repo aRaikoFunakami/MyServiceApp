@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <!-- IP Address Label -->
+    <TextView
+        android:id="@+id/label_ip_address"
+        style="@style/LabelStyle"
+        android:text="IPアドレス"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="@id/ip_address"
+        app:layout_constraintEnd_toStartOf="@id/ip_address"
+        app:layout_constraintStart_toStartOf="parent"/>
+
+    <!-- IP Address Input Field -->
+    <EditText
+        android:id="@+id/ip_address"
+        style="@style/EditableTextStyle"
+        android:hint="http://192.168.1.100:8080"
+        android:text="http://192.168.1.100:8080"
+        android:inputType="textUri"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toEndOf="@id/label_ip_address"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+
+    <!-- Language Label -->
+    <TextView
+        android:id="@+id/label_language"
+        style="@style/LabelStyle"
+        android:text="言語"
+        app:layout_constraintTop_toBottomOf="@id/ip_address"
+        app:layout_constraintBottom_toBottomOf="@id/language"
+        app:layout_constraintStart_toStartOf="parent"/>
+
+    <!-- Language Input Field -->
+    <Spinner
+        android:id="@+id/language"
+        android:layout_width="wrap_content"
+        android:layout_height="50dp"
+        android:padding="8dp"
+        android:entries="@array/language_options"
+        app:layout_constraintTop_toBottomOf="@id/ip_address"
+        app:layout_constraintStart_toEndOf="@id/label_language"/>
+
+    <!-- Vehicle Speed Label -->
+    <TextView
+        android:id="@+id/label_vehicle_speed"
+        style="@style/LabelStyle"
+        android:text="車両速度"
+        app:layout_constraintTop_toBottomOf="@id/language"
+        app:layout_constraintBottom_toBottomOf="@id/vehicle_speed"
+        app:layout_constraintEnd_toStartOf="@id/vehicle_speed"
+        app:layout_constraintStart_toStartOf="parent"/>
+
+    <!-- Vehicle Speed Input Field -->
+    <EditText
+        android:id="@+id/vehicle_speed"
+        style="@style/EditableTextStyle"
+        android:hint="60"
+        android:text="60"
+        android:inputType="numberDecimal"
+        app:layout_constraintTop_toBottomOf="@id/language"
+        app:layout_constraintStart_toEndOf="@id/label_vehicle_speed"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- Fuel Level Label -->
+    <TextView
+        android:id="@+id/label_fuel_level"
+        style="@style/LabelStyle"
+        android:text="燃料レベル"
+        app:layout_constraintTop_toBottomOf="@id/vehicle_speed"
+        app:layout_constraintBottom_toBottomOf="@id/fuel_level"
+        app:layout_constraintEnd_toStartOf="@id/fuel_level"
+        app:layout_constraintStart_toStartOf="parent"/>
+
+    <!-- Fuel Level Input Field -->
+    <EditText
+        android:id="@+id/fuel_level"
+        style="@style/EditableTextStyle"
+        android:hint="75"
+        android:text="75"
+        android:inputType="number"
+        app:layout_constraintTop_toBottomOf="@id/vehicle_speed"
+        app:layout_constraintStart_toEndOf="@id/label_fuel_level"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- Start Service Button -->
+    <Button
+        android:id="@+id/start_service_button"
+        style="@style/ButtonStyle"
+        android:text="サービス開始"
+        app:layout_constraintTop_toBottomOf="@id/fuel_level"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- Stop Service Button -->
+    <Button
+        android:id="@+id/stop_service_button"
+        style="@style/ButtonStyle"
+        android:text="サービス停止"
+        app:layout_constraintTop_toBottomOf="@id/start_service_button"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- Apply Car Info Button -->
+    <Button
+        android:id="@+id/apply_car_info_button"
+        style="@style/ButtonStyle"
+        android:text="車両情報を反映"
+        app:layout_constraintTop_toBottomOf="@id/stop_service_button"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

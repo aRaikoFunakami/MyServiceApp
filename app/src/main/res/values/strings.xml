@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">MyServiceApp</string>
+    <string-array name="language_options">
+        <!-- https://en.wikipedia.org/wiki/List_of_ISO_639_language_codes -->
+        <item>ja</item>
+        <item>en</item>
+    </string-array>
 </resources>

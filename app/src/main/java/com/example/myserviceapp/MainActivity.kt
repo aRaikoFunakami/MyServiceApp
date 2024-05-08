@@ -8,24 +8,16 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
+import android.widget.AdapterView
+import android.widget.Button
+import android.widget.EditText
+import android.widget.Spinner
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.example.myserviceapp.ui.theme.MyServiceAppTheme
+import org.json.JSONObject
+
 
 class MainActivity : ComponentActivity() {
     private var TAG = MyService::class.java.simpleName
@@ -33,6 +25,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var intentCarInfoService: Intent
     private var ipAddress = "http://127.0.0.1:8080" // IPアドレスのデフォルト値
     //private var ipAddress = "http://192.168.1.100:8080" // IPアドレスのデフォルト値
+    private lateinit var spinner : Spinner
 
     // 音声録音パーミッションのリクエストに使用するActivityResultLauncherを定義
     private val requestPermissionLauncher =
@@ -61,7 +54,18 @@ class MainActivity : ComponentActivity() {
     private fun checkAndStartService(ipAddress: String) {
         if (Settings.canDrawOverlays(this)) {
             intentService.putExtra("ip_address", ipAddress) // IPアドレスをIntentに追加
+            // 車両情報を設定
+            val carInfo = JSONObject()
+            val vehicleSpeed = findViewById<EditText>(R.id.vehicle_speed).text.toString()
+            val fuelLevel = findViewById<EditText>(R.id.fuel_level).text.toString()
+            val language = spinner.selectedItem.toString()
+            carInfo.put("vehicle_speed", vehicleSpeed)
+            carInfo.put("fuel_level", fuelLevel)
+            carInfo.put("language", language)
+            Log.d("CAR_INFO Client", carInfo.toString())
+            intentService.putExtra("car_info", carInfo.toString())
             startService(intentService)
+            // ダミーの車両情報表示Serviceを起動する
             intentCarInfoService.putExtra("action", "SHOW_OVERLAY")
             startService(intentCarInfoService)
         } else {
@@ -80,44 +84,69 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main) // XMLレイアウトを使用
+
+        // サービス用のIntentを作成
         intentService = Intent(application, MyService::class.java)
         intentCarInfoService = Intent(application, CarInfoService::class.java)
 
-        setContent {
-            val ipState = remember { mutableStateOf(ipAddress) }
+        // IPアドレスのEditTextから値を取得
+        val ipAddressEditText = findViewById<EditText>(R.id.ip_address)
 
-            MyServiceAppTheme {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    OutlinedTextField(
-                        value = ipState.value,
-                        onValueChange = { ipState.value = it },
-                        label = { Text("IP Address") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), // UrlからUriに変更
-                        modifier = Modifier.padding(bottom = 16.dp) // ボタンとの間隔を広げる
-                    )
-                    Button(onClick = {
-                        // RECORD_AUDIO パーミッションの確認
-                        if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                            checkAndStartService(ipAddress)
-                        } else {
-                            // パーミッションがない場合、リクエスト
-                            requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    }) {
-                        Text("Start Service")
-                    }
+        // サービス開始ボタンの設定
+        findViewById<Button>(R.id.start_service_button).setOnClickListener {
+            val ipAddress = ipAddressEditText.text.toString()
 
-                    Button(onClick = {
-                        // サービスを停止
-                        stopService(intentService)
-                        stopService(intentCarInfoService)
-                    }, modifier = Modifier.padding(top = 8.dp)) {
-                        Text("Stop Service")
-                    }
-                }
+            // RECORD_AUDIO パーミッションの確認
+            if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                checkAndStartService(ipAddress)
+            } else {
+                // パーミッションがない場合、リクエスト
+                requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+
+        // サービス停止ボタンの設定
+        findViewById<Button>(R.id.stop_service_button).setOnClickListener {
+            stopService(intentService)
+            stopService(intentCarInfoService)
+        }
+
+        // 車両情報の明示的なアップデートボタンの設定
+        findViewById<Button>(R.id.apply_car_info_button).setOnClickListener {
+            val carInfo = JSONObject()
+            // EditTextから入力された値を取得
+            val vehicleSpeed = findViewById<EditText>(R.id.vehicle_speed).text.toString()
+            val fuelLevel = findViewById<EditText>(R.id.fuel_level).text.toString()
+            val language = spinner.selectedItem.toString()
+
+            // 入力値をJSONObjectに追加
+            carInfo.put("vehicle_speed", vehicleSpeed)
+            carInfo.put("fuel_level", fuelLevel)
+            carInfo.put("language", language)
+            Log.d("CAR_INFO Client", carInfo.toString())
+            intentService.putExtra("action", "CAR_INFO")
+            intentService.putExtra("car_info", carInfo.toString())
+            startService(intentService)
+        }
+
+        spinner = findViewById<Spinner>(R.id.language)
+        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>,
+                view: android.view.View?,
+                position: Int,
+                id: Long
+            ) {
+                val selectedItem = parent.getItemAtPosition(position).toString()
+                Log.d("MainActivity", "Selected item: $selectedItem")
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>) {
+                // 選択されていない場合の処理
             }
         }
     }

@@ -23,14 +23,13 @@ import android.view.WindowManager
 import android.widget.ImageView
 import androidx.core.app.NotificationCompat
 import com.google.gson.annotations.SerializedName
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import retrofit2.Call
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import retrofit2.http.GET
-import retrofit2.http.Query
+import retrofit2.http.Body
+import retrofit2.http.POST
+import retrofit2.Callback
+import retrofit2.Response
 import kotlin.math.abs
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -40,6 +39,9 @@ import android.provider.Settings
 import android.car.Car
 import android.car.VehiclePropertyIds.*
 import android.car.hardware.property.CarPropertyManager
+import org.intellij.lang.annotations.Language
+import org.json.JSONException
+import org.json.JSONObject
 
 data class TextResponse(
     @SerializedName("received_text") val receivedText: String,
@@ -67,11 +69,6 @@ data class AirControlDelta(
     @SerializedName("temperature_delta") val temperatureDelta: Double,
 )
 
-interface ApiService {
-    @GET("input")
-    fun getTextResponse(@Query("text") text: String): Call<TextResponse>
-}
-
 // 通知チャネルのID
 private const val CHANNEL_ID = "my_channel_id"
 
@@ -89,6 +86,8 @@ class MyService : Service(), TextToSpeech.OnInitListener {
     private lateinit var car: Car
     private lateinit var carPropertyManager: CarPropertyManager
     private var apiBaseUrl = "http://192.168.1.100:8080/"
+    private lateinit var carInfoJson : JSONObject
+    private var carLanguage = "ja"
 
     override fun onBind(intent: Intent): IBinder? {
         return null
@@ -125,14 +124,30 @@ class MyService : Service(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             Log.d(TAG, "TextToSpeech.SUCCESS")
-            // TextToSpeechの初期化が成功した場合、言語を設定
-            textToSpeech?.language = Locale.JAPANESE
-            val textToSpeak = "Copilotを開始します"
-            speak(textToSpeak)
+            when (carLanguage) {
+                "ja" -> {
+                    textToSpeech?.language = Locale.JAPANESE
+                    val textToSpeak = "Copilotを開始します"
+                    speak(textToSpeak)
+                }
+                "en" -> {
+                    textToSpeech?.language = Locale.ENGLISH
+                    val textToSpeak = "Starting Copilot"
+                    speak(textToSpeak)
+                }
+                else -> {
+                    Log.d(TAG, "Unsupported language: $carLanguage")
+                    // 対応していない言語の場合は英語をデフォルトとする
+                    textToSpeech?.language = Locale.ENGLISH
+                    val textToSpeak = "Starting Copilot"
+                    speak(textToSpeak)
+                }
+            }
         } else {
-            Log.d(TAG, "ERROR: TextToSpeech.SUCCESS")
+            Log.e(TAG, "ERROR: TextToSpeech not initialized")
         }
     }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!isRunning) {
             isRunning = true
@@ -155,9 +170,30 @@ class MyService : Service(), TextToSpeech.OnInitListener {
                     // エコーキャンセル対応したら削除
                     startListening()
                 }
+                "CAR_INFO" -> {
+                    intent?.getStringExtra("car_info")?.let { Log.d("CAR_INFO Server", it) }
+                }
             }
         }
+
+        // 起動時も設定を反映する
         apiBaseUrl = intent?.getStringExtra("ip_address") ?: apiBaseUrl
+        // carInfoをJSONオブジェクトとして取得
+        val carInfoString = intent?.getStringExtra("car_info")
+        carInfoString?.let { info ->
+            try {
+                carInfoJson = JSONObject(info)
+                // JSONオブジェクトからデータを取得
+                val vehicleSpeed = carInfoJson.getString("vehicle_speed")
+                val fuelLevel = carInfoJson.getString("fuel_level")
+                carLanguage = carInfoJson.getString("language")
+
+                // ログ出力や他の処理
+                Log.d("CAR_INFO Service", "Vehicle Speed: $vehicleSpeed, Fuel Level: $fuelLevel, Language: $carLanguage")
+            } catch (e: JSONException) {
+                Log.e("CAR_INFO Service", "Failed to parse car info", e)
+            }
+        }
         return START_STICKY
     }
 
@@ -274,18 +310,33 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         // 正規表現用のパターン文字列をリストで管理
         // ハロー アクセス で呼び出したいが間違って認識した場合も許容する
         // なんどかテストして間違って認識された文字列をリストに含めておく
-        val patterns = listOf(
-            "(\\\\s|^)ハロー\\s*アクセス(\\\\s|\$)",
-            "(\\\\s|^)ハロー\\s*学生(\\\\s|\$)",
-            "(\\\\s|^)ハロー\\s*ワークです(\\\\s|\$)",
-            "(\\\\s|^)ハロー\\s*ワークスです(\\\\s|\$)",
-            "(\\\\s|^)ハロー\\s*ワークス(\\\\s|\$)",
-            "(\\\\s|^)ハロー\\s*惑星(\\\\s|\$)",
-            "(\\\\s|^)原田\\s*学生(\\\\s|\$)",
-        )
+        val patterns = when(carLanguage) {
+            "ja" -> listOf(
+                "(\\\\s|^)ハロー\\s*アクセス(\\\\s|\$)",
+                "(\\\\s|^)ハロー\\s*学生(\\\\s|\$)",
+                "(\\\\s|^)ハロー\\s*ワークです(\\\\s|\$)",
+                "(\\\\s|^)ハロー\\s*ワークスです(\\\\s|\$)",
+                "(\\\\s|^)ハロー\\s*ワークス(\\\\s|\$)",
+                "(\\\\s|^)ハロー\\s*惑星(\\\\s|\$)",
+                "(\\\\s|^)原田\\s*学生(\\\\s|\$)",
+            )
+            "en" -> listOf(
+                "(\\\\s|^)hello\\s*access(\\\\s|\$)",
+                "(\\\\s|^)hello\\s*office(\\\\s|\$)",
+                "(\\\\s|^)hello\\s*Alexis(\\\\s|\$)",
+                "(\\\\s|^)how to\\s*access(\\\\s|\$)",
+                "(\\\\s|^)how to\\s*look sis(\\\\s|\$)",
+                "(\\\\s|^)cuddle\\s*access(\\\\s|\$)",
+                "(\\\\s|^)how\\s*access(\\\\s|\$)",
+            )
+            else -> listOf(
+                "Error",
+            )
+        }
 
-        // パターンリストを一つの正規表現に結合
-        val combinedPattern = patterns.joinToString("|").toRegex()
+        // 正規表現オブジェクトの生成、英語の場合は大文字小文字を区別しない
+        val regexOptions = if (carLanguage == "en") setOf(RegexOption.IGNORE_CASE) else emptySet()
+        val combinedPattern = patterns.joinToString("|").toRegex(regexOptions)
 
         // いずれかのパターンにマッチした場合はtrue、そうでない場合はfalseを返す
         return combinedPattern.containsMatchIn(input)
@@ -399,7 +450,15 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         Log.d(TAG, "StartListening!!!")
         muteBeepForRecognizer()
 
-        val lang = "ja-JP"
+        val lang = when (carLanguage) {
+            "ja" -> "ja-JP"
+            "en" -> "en-US"
+            else -> {
+                Log.d(TAG, "Unsupported language: $carLanguage")
+                "en-US" // デフォルトとして英語を設定
+            }
+        }
+
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -419,7 +478,13 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         isConversationMode = active
         Log.d(TAG, "Conversation mode set to: $isConversationMode")
         if (isConversationMode) {
-            speak("何をお手伝いしましょうか？")
+            val message = when (carLanguage) {
+                "ja" -> "何をお手伝いしましょうか？"
+                "en" -> "How can I assist you?"
+                else -> "How can I assist you?"
+            }
+            speak(message)
+
             if (isAAOS()) {
                 Log.d(TAG, "INFO_FUEL_CAPACITY : ${carPropertyManager.getFloatProperty(INFO_FUEL_CAPACITY, 0)}")
                 Log.d(TAG, "FUEL_LEVEL : ${carPropertyManager.getFloatProperty(FUEL_LEVEL, 0)}")
@@ -428,7 +493,12 @@ class MyService : Service(), TextToSpeech.OnInitListener {
             }
             showOverlayImage()
         } else {
-            speak("またの依頼をお待ちしています。", isAdd = true)
+            val message = when (carLanguage) {
+                "ja" -> "またの依頼をお待ちしています。"
+                "en" -> "We look forward to receiving another request."
+                else -> "We look forward to receiving another request."
+            }
+            speak(message, isAdd = true)
             hideOverlayImage()
         }
     }
@@ -494,26 +564,38 @@ class MyService : Service(), TextToSpeech.OnInitListener {
         setConversationMode((false))
     }
 
+    // Copilot サーバーとの通信を担う
+    interface ApiService {
+        @POST("input")
+        fun sendTextRequest(@Body request: RequestData): Call<TextResponse>
+    }
+    data class RequestData(val user_input: String, val car_info: JSONObject)
+
     fun startAIConversationProcessing(requestText: String) {
         isAIProcessingConversation = true
         showLoadingOverlayImage()
         Log.d(TAG, "Start AI Conversation")
-        // 会話処理の開始
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                Log.d(TAG, "Connect to: $apiBaseUrl")
-                val retrofit = Retrofit.Builder()
-                    .baseUrl(apiBaseUrl)
-                    .addConverterFactory(GsonConverterFactory.create())
-                    .build()
+        Log.d(TAG, "apiBaseUrl: $apiBaseUrl")
+        Log.d(TAG, "requestText: $requestText")
+        Log.d(TAG, "carInfoJson: $carInfoJson")
 
-                val service = retrofit.create(ApiService::class.java)
-                val response = service.getTextResponse(requestText).execute()
+        val retrofit = Retrofit.Builder()
+            .baseUrl(apiBaseUrl)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
 
+        val service = retrofit.create(ApiService::class.java)
+        val requestData = RequestData(requestText, carInfoJson)  // リクエストデータのインスタンスを作成
+        val call = service.sendTextRequest(requestData)
+
+        call.enqueue(object : Callback<TextResponse> {
+            override fun onResponse(call: Call<TextResponse>, response: Response<TextResponse>) {
+                hideLoadingOverlayImage()
                 if (response.isSuccessful) {
                     val responseData = response.body()
                     Log.d(TAG, "Received data: $responseData")
 
+                    // 以下、応答データに基づいた処理を行う
                     // Speech
                     if (!responseData?.responseText.isNullOrEmpty()) {
                         // テキストが空でない場合、読み上げを行う
@@ -534,17 +616,19 @@ class MyService : Service(), TextToSpeech.OnInitListener {
                         changeTemperature(it.temperature)
                     }
                 } else {
-                    Log.d(TAG, "Failed to receive data")
+                    Log.e(TAG, "Failed to receive data with HTTP code ${response.code()}")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during network call", e)
-            } finally {
                 Log.d(TAG, "Finish AI Conversation")
                 hideLoadingOverlayImage()
                 // 音声再生する場合は音声再生終了時に呼び出す
                 //finishAIConversationProcessing()
             }
-        }
+
+            override fun onFailure(call: Call<TextResponse>, t: Throwable) {
+                hideLoadingOverlayImage()
+                Log.e(TAG, "Error during network call", t)
+            }
+        })
     }
 
     private fun finishAIConversationProcessing() {
